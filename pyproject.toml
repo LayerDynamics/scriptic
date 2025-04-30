@@ -1,22 +1,37 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = [
+    "setuptools>=42",
+    "wheel",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scriptic"
 version = "0.1.0"
-description = "A minimalist embeddable Python REPL"
+description = "A minimalist embeddable Python REPL / Script Runner."
 readme = "README.md"
 requires-python = ">=3.6"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
-    {name = "Ryan O'Boyle", email = "layerdynamics@proton.me"}
+    { name = "Ryan O'Boyle", email = "layerdynamics@proton.me" },
 ]
-keywords = ["repl", "terminal", "interactive", "embed", "console"]
+keywords = [
+    "repl",
+    "terminal",
+    "interactive",
+    "embed",
+    "console",
+    "script",
+    "runner",
+    "python",
+    "cli",
+    "shell",
+    "script runner",
+    "interactive shell",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
@@ -26,6 +41,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: User Interfaces",
+    "Topic ::  REPL / Script Runner",
+    "Environment :: Console",
 ]
 
 [project.urls]

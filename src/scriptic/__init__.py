@@ -17,11 +17,4 @@ __email__ = "layerdynamics@proton.me"
 __license__ = "MIT"
 
 # Define what's available when using `from scriptic import *`
-__all__ = [
-    'Scriptic', 
-    'run_scriptic', 
-    'run_cli', 
-    '__version__', 
-    'get_version', 
-    'get_version_info'
-]
+__all__ = ["Scriptic", "run_scriptic", "run_cli", "__version__", "get_version", "get_version_info", "VERSION"]

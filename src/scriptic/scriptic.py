@@ -13,6 +13,7 @@ import signal
 import traceback
 import readline  # Enables command history automatically when available
 import argparse
+import pdb
 from typing import Dict, Any, Callable, Optional, List, Tuple
 
 
@@ -48,6 +49,9 @@ class Scriptic:
         self.buffer = []
         self.custom_commands = {}
 
+        # Make the REPL instance available in the context
+        self.context["repl"] = self
+
         # Register built-in commands
         self.register_command("help", self._cmd_help)
         self.register_command("exit", self._cmd_exit)
@@ -56,6 +60,8 @@ class Scriptic:
         self.register_command("reset", self._cmd_reset)
         self.register_command("run", self._cmd_run)
         self.register_command("load", self._cmd_load)
+        self.register_command("debug", self._cmd_debug)
+        self.register_command("debugger", self._cmd_debug)
 
     def register_command(self, name: str, func: Callable) -> None:
         """
@@ -191,6 +197,15 @@ class Scriptic:
             code_str: Python code to execute
         """
         try:
+            # Check for common JavaScript-like syntax
+            if code_str.lstrip().startswith(("const ", "let ", "var ")):
+                print("JavaScript-like syntax detected. In Python, variables are declared without keywords:")
+                js_var_type = code_str.lstrip().split()[0]
+                example = code_str.replace(js_var_type, "", 1).strip()
+                print(f"Instead of: {code_str}")
+                print(f"Try: {example}")
+                return
+
             # First try to eval (for expressions that return values)
             try:
                 # SECURITY NOTE: eval is intentionally used here as part of the REPL functionality.
@@ -408,6 +423,43 @@ class Scriptic:
         except Exception as e:
             print(f"Error loading '{filename}': {e}")
             traceback.print_exc()
+
+    # Add new debug command
+    def _cmd_debug(self, args: str) -> None:
+        """
+        Start an interactive Python debugger session.
+
+        This command starts a PDB (Python Debugger) session that allows you
+        to debug the current state of the REPL. Use standard PDB commands
+        within the debugger session.
+
+        Common PDB commands:
+        - h: help
+        - n: next line
+        - s: step into
+        - c: continue
+        - q: quit debugger
+        - p <expr>: print expression
+
+        Usage: %debug [expression]
+        """
+        print("Starting Python debugger (PDB)")
+        print("Type 'h' for help, 'c' to continue back to REPL, 'q' to quit debugger")
+
+        if args:
+            try:
+                # If args provided, evaluate expression in current context
+                # and drop into debugger with the result
+                result = eval(args, self.context)
+                print(f"Debug expression result: {result}")
+                pdb.set_trace()
+            except Exception as e:
+                print(f"Error evaluating debug expression: {e}")
+                # Still start the debugger so user can inspect the state
+                pdb.set_trace()
+        else:
+            # Start debugger with current context
+            pdb.set_trace()
 
 
 def run_scriptic(context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ", more_prompt: str = "... ", intro: Optional[str] = None) -> None:
