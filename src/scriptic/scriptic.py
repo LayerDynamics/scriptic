@@ -14,7 +14,8 @@ import traceback
 import readline  # Enables command history automatically when available
 import argparse
 import pdb
-from typing import Dict, Any, Callable, Optional, List, Tuple
+import atexit
+from typing import Dict, Any, Callable, Optional
 
 
 class Scriptic:
@@ -31,7 +32,7 @@ class Scriptic:
     - Signal handling (Ctrl+C won't kill your app)
     """
 
-    def __init__(self, context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ", more_prompt: str = "... ", intro: Optional[str] = None):
+    def __init__(self, context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ", more_prompt: str = "... ", intro: Optional[str] = None, history_file: Optional[str] = None):
         """
         Initialize the Scriptic REPL.
 
@@ -40,6 +41,7 @@ class Scriptic:
             prompt: Primary prompt string
             more_prompt: Continuation prompt for multiline input
             intro: Introduction text to display when REPL starts
+            history_file: Path to the history file (None for no history)
         """
         self.context = {} if context is None else context
         self.prompt = prompt
@@ -48,6 +50,10 @@ class Scriptic:
         self.running = False
         self.buffer = []
         self.custom_commands = {}
+        self.history_file = history_file or os.path.expanduser("~/.scriptic_history")
+        self._completion_matches = []
+        self._original_sigint = None
+        self._original_sigterm = None
 
         # Make the REPL instance available in the context
         self.context["repl"] = self
@@ -62,6 +68,7 @@ class Scriptic:
         self.register_command("load", self._cmd_load)
         self.register_command("debug", self._cmd_debug)
         self.register_command("debugger", self._cmd_debug)
+        self.register_command("history", self._cmd_history)
 
     def register_command(self, name: str, func: Callable) -> None:
         """
@@ -80,6 +87,9 @@ class Scriptic:
         """Start the REPL loop."""
         # Set up signal handlers
         self._setup_signal_handlers()
+
+        # Initialize readline with history and completion
+        self._initialize_readline()
 
         # Display intro text if provided
         if self.intro:
@@ -112,6 +122,79 @@ class Scriptic:
 
         # Clean up signal handlers before exit
         self._restore_signal_handlers()
+
+    def _initialize_readline(self) -> None:
+        """Initialize readline with history and completion."""
+        # Try to load history file
+        try:
+            if os.path.exists(self.history_file):
+                readline.read_history_file(self.history_file)
+
+            # Set maximum number of history items
+            readline.set_history_length(1000)
+
+            # Register to save history on exit
+            atexit.register(self._save_history)
+
+            # Set basic tab completion for Python
+            readline.parse_and_bind("tab: complete")
+
+            # Set completion function
+            readline.set_completer(self._completer)
+
+        except (ImportError, AttributeError, IOError) as e:
+            # Readline might not be available on all platforms
+            print(f"Note: Command history disabled ({e.__class__.__name__})")
+
+    def _save_history(self) -> None:
+        """Save command history to file."""
+        try:
+            readline.write_history_file(self.history_file)
+        except (ImportError, AttributeError, IOError):
+            # Silently ignore errors when writing history
+            pass
+
+    def _completer(self, text: str, state: int) -> Optional[str]:
+        """
+        Custom completer function for readline.
+
+        Completes:
+        - Commands (when input starts with %)
+        - Python identifiers from current context
+
+        Args:
+            text: The text to complete
+            state: The state of completion (0 for first match, etc.)
+
+        Returns:
+            The completion or None if no more completions
+        """
+        if state == 0:
+            # Initialize the completion list
+            self._completion_matches = []
+
+            # Check if completing a command
+            if text.startswith("%"):
+                cmd_text = text[1:]
+                self._completion_matches = [f"%{cmd}" for cmd in self.custom_commands if cmd.startswith(cmd_text)]
+            else:
+                # Complete variables and functions in context
+                for key in self.context:
+                    if key.startswith(text):
+                        self._completion_matches.append(key)
+
+                # Add Python builtins
+                for key in dir(__builtins__):
+                    if key.startswith(text):
+                        self._completion_matches.append(key)
+
+            self._completion_matches.sort()
+
+        # Return the appropriate completion or None if we've run out
+        if state < len(self._completion_matches):
+            return self._completion_matches[state]
+        else:
+            return None
 
     def _read_input(self) -> Optional[str]:
         """
@@ -146,7 +229,7 @@ class Scriptic:
             return
 
         # Check if input is a custom command
-        if input_str.startswith("%") and self.buffer == []:
+        if input_str.startswith("%") and not self.buffer:
             self._handle_command(input_str[1:])
             return
 
@@ -251,18 +334,19 @@ class Scriptic:
         signal.signal(signal.SIGINT, self._original_sigint)
         signal.signal(signal.SIGTERM, self._original_sigterm)
 
-    def _handle_signal(self, sig: int, frame) -> None:
+    def _handle_signal(self, sig: int, _frame=None) -> None:
         """
         Handle signals like SIGINT (Ctrl+C) and SIGTERM.
 
         Args:
             sig: Signal number
-            frame: Current stack frame
+            _frame: Current stack frame (unused but required by signal handler API)
         """
         if sig == signal.SIGINT:
             # For SIGINT, just interrupt the current input
             raise KeyboardInterrupt
-        elif sig == signal.SIGTERM:
+
+        if sig == signal.SIGTERM:
             # For SIGTERM, exit gracefully
             self.running = False
             print("\nReceived termination signal. Exiting...")
@@ -293,11 +377,11 @@ class Scriptic:
             else:
                 print(f"Unknown command: %{cmd}")
 
-    def _cmd_exit(self, args: str) -> None:
+    def _cmd_exit(self, _args: str) -> None:
         """Exit the REPL."""
         self.running = False
 
-    def _cmd_vars(self, args: str) -> None:
+    def _cmd_vars(self, _args: str) -> None:
         """Show variables in the current context."""
         # Filter out builtins and private variables
         user_vars = {k: v for k, v in self.context.items() if not k.startswith("_") and k not in dir(__builtins__)}
@@ -350,7 +434,7 @@ class Scriptic:
             self.context["__file__"] = os.path.abspath(filename)
 
             # Read the file content
-            with open(filename, "r") as f:
+            with open(filename, "r", encoding="utf-8") as f:
                 file_content = f.read()
 
             # Compile and execute the file content
@@ -360,14 +444,14 @@ class Scriptic:
                 # Compile the code to detect syntax errors
                 compiled_code = compile(file_content, filename, "exec")
                 # exec is necessary here to run user-provided scripts within the REPL context
-                exec(compiled_code, self.context)  # noqa: S307
+                exec(compiled_code, self.context)  # noqa: S307,W0122
                 print(f"Finished running '{filename}'")
             except SyntaxError as e:
                 # Handle syntax errors found during compile
                 print(f"Error executing '{filename}': Syntax error")
                 print(f"Error details: {e}")
                 traceback.print_exc()
-            except Exception as e:
+            except Exception as e:  # noqa: W0718
                 # Handle other runtime errors
                 print(f"Error executing '{filename}': {e}")
                 traceback.print_exc()
@@ -377,7 +461,7 @@ class Scriptic:
         except OSError as e:
             print(f"Error reading file '{filename}': {e}")
             traceback.print_exc()
-        except Exception as e:
+        except Exception as e:  # noqa: W0718
             # Catch any other exceptions to ensure they don't propagate out
             print(f"Unexpected error executing '{filename}': {e}")
             traceback.print_exc()
@@ -407,7 +491,7 @@ class Scriptic:
 
         try:
             # Read the file content
-            with open(filename, "r") as f:
+            with open(filename, "r", encoding="utf-8") as f:
                 file_content = f.read()
 
             # Add to the input buffer so it becomes part of the REPL history
@@ -420,12 +504,12 @@ class Scriptic:
             for line in lines:
                 print(f"{self.more_prompt}{line}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: W0718
             print(f"Error loading '{filename}': {e}")
             traceback.print_exc()
 
     # Add new debug command
-    def _cmd_debug(self, args: str) -> None:
+    def _cmd_debug(self, args: str) -> None:  # pylint: disable=W1515
         """
         Start an interactive Python debugger session.
 
@@ -450,19 +534,69 @@ class Scriptic:
             try:
                 # If args provided, evaluate expression in current context
                 # and drop into debugger with the result
-                result = eval(args, self.context)
+                # pylint: disable=W0123
+                result = eval(args, self.context)  # noqa: W0123
                 print(f"Debug expression result: {result}")
-                pdb.set_trace()
-            except Exception as e:
+                pdb.set_trace()  # noqa: W1515
+            except Exception as e:  # noqa: W0718
                 print(f"Error evaluating debug expression: {e}")
                 # Still start the debugger so user can inspect the state
-                pdb.set_trace()
+                pdb.set_trace()  # noqa: W1515
         else:
             # Start debugger with current context
-            pdb.set_trace()
+            pdb.set_trace()  # noqa: W1515
+
+    def _cmd_history(self, args: str) -> None:
+        """
+        Display or manage command history.
+
+        Usage:
+            %history          - Show command history
+            %history clear    - Clear history
+            %history save     - Save history to file
+            %history load     - Load history from file
+
+        Command history is automatically saved between sessions when readline
+        is available.
+        """
+        args = args.strip()
+
+        if not args:
+            # Display history
+            try:
+                history_length = readline.get_current_history_length()
+                for i in range(1, history_length + 1):
+                    item = readline.get_history_item(i)
+                    if item and not item.startswith("%history"):
+                        print(f"{i}: {item}")
+            except (ImportError, AttributeError) as e:
+                print(f"Error accessing history: {e}")
+        elif args == "clear":
+            # Clear history
+            try:
+                readline.clear_history()
+                print("History cleared.")
+            except (ImportError, AttributeError) as e:
+                print(f"Error clearing history: {e}")
+        elif args == "save":
+            # Save history
+            try:
+                readline.write_history_file(self.history_file)
+                print(f"History saved to {self.history_file}")
+            except (ImportError, AttributeError, IOError) as e:
+                print(f"Error saving history: {e}")
+        elif args == "load":
+            # Load history
+            try:
+                readline.read_history_file(self.history_file)
+                print(f"History loaded from {self.history_file}")
+            except (ImportError, AttributeError, IOError) as e:
+                print(f"Error loading history: {e}")
+        else:
+            print("Unknown history command. Use: %history [clear|save|load]")
 
 
-def run_scriptic(context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ", more_prompt: str = "... ", intro: Optional[str] = None) -> None:
+def run_scriptic(context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ", more_prompt: str = "... ", intro: Optional[str] = None, history_file: Optional[str] = None) -> None:
     """
     Run a Scriptic REPL with the given context.
 
@@ -474,8 +608,9 @@ def run_scriptic(context: Optional[Dict[str, Any]] = None, prompt: str = ">>> ",
         prompt: Primary prompt string
         more_prompt: Continuation prompt for multiline input
         intro: Introduction text to display when REPL starts
+        history_file: Path to the history file (None for default ~/.scriptic_history)
     """
-    repl = Scriptic(context, prompt, more_prompt, intro)
+    repl = Scriptic(context, prompt, more_prompt, intro, history_file)
     repl.run()
 
 
@@ -490,6 +625,8 @@ def run_cli():
     parser.add_argument("script", nargs="?", help="Python script to load on startup")
     parser.add_argument("--no-intro", action="store_true", help="Skip the intro message")
     parser.add_argument("--prompt", default=">>> ", help="Custom prompt string")
+    parser.add_argument("--history-file", help="Custom history file location")
+    parser.add_argument("--no-history", action="store_true", help="Disable command history")
 
     args = parser.parse_args()
 
@@ -501,7 +638,7 @@ def run_cli():
                 script_content = f.read()
             # Execute the script and capture its globals
             # NOTE: exec is intentionally used here to load user scripts into the REPL context
-            exec(script_content, context)  # noqa: S307
+            exec(script_content, context)  # noqa: S307,W0122
             print(f"Loaded script: {args.script}")
         except FileNotFoundError:
             print(f"Script not found: {args.script}")
@@ -512,14 +649,17 @@ def run_cli():
         except OSError as e:
             print(f"Error reading script: {e}")
             traceback.print_exc()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: W0718
             # This broader exception handles other runtime errors in user scripts
             print(f"Error executing script: {e}")
             traceback.print_exc()
 
+    # Determine history file
+    history_file = None if args.no_history else args.history_file
+
     # Start the REPL
     intro = None if args.no_intro else "Scriptic REPL - Type Python code or %help for commands"
-    run_scriptic(context=context, prompt=args.prompt, intro=intro)
+    run_scriptic(context=context, prompt=args.prompt, intro=intro, history_file=history_file)
 
 
 if __name__ == "__main__":

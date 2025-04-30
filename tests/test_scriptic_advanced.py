@@ -55,6 +55,7 @@ class ScripticAdvancedTestCase(unittest.TestCase):
         test_prompt = "TEST>>> "
         test_more = "TEST... "
         test_intro = "TEST INTRO"
+        test_history_file = None
 
         # Mock the Scriptic class
         with patch("scriptic.scriptic.Scriptic") as mock_scriptic:
@@ -62,10 +63,10 @@ class ScripticAdvancedTestCase(unittest.TestCase):
             mock_instance = mock_scriptic.return_value
 
             # Call the function
-            run_scriptic(test_context, test_prompt, test_more, test_intro)
+            run_scriptic(test_context, test_prompt, test_more, test_intro, test_history_file)
 
             # Verify Scriptic was constructed with correct args
-            mock_scriptic.assert_called_once_with(test_context, test_prompt, test_more, test_intro)
+            mock_scriptic.assert_called_once_with(test_context, test_prompt, test_more, test_intro, test_history_file)
 
             # Verify run was called
             mock_instance.run.assert_called_once()
@@ -393,16 +394,16 @@ def test_process_input_incomplete_code():
     """Test processing multi-line input."""
     # Create a fresh REPL instance for this test
     repl = Scriptic({})
-    
+
     # First line of a multi-line statement
     repl._process_input("def test_func():")
     assert len(repl.buffer) == 1
     assert repl.buffer[0] == "def test_func():"
-    
+
     # Add more lines
     repl._process_input("    return 42")
     assert len(repl.buffer) == 2
-    
+
     # Process a blank line to end the function definition
     with patch("sys.stdout", new=io.StringIO()):
         # We can't use _process_input directly to test multiline execution
@@ -410,7 +411,7 @@ def test_process_input_incomplete_code():
         code = "\n".join(repl.buffer)
         repl._execute_code(code)
         repl.buffer = []
-        
+
     # Verify the function was defined
     assert "test_func" in repl.context
     assert repl.context["test_func"]() == 42
@@ -507,43 +508,44 @@ def test_complete_process_flow():
     """Test a complete flow through the REPL process."""
     # Create a fresh REPL instance for this test
     repl = Scriptic({})
-    
+
     # First set variable directly to ensure test works as expected
     repl.context["x"] = 10
-    
+
     # Mock _handle_command for vars
     original_handle_command = repl._handle_command
+
     def mock_handle_vars(cmd_line):
         if cmd_line == "vars":
             print("x                    int         10")
         else:
             return original_handle_command(cmd_line)
-    
+
     with patch.object(repl, "_handle_command", side_effect=mock_handle_vars):
         # Setup a sequence of inputs to test various paths
         with patch.object(
             repl,
             "_read_input",
             side_effect=[
-                "%vars",       # Show variables 
+                "%vars",  # Show variables
                 "invalid syntax",  # Syntax error
-                "1/0",          # Runtime error
-                EOFError(),    # Exit
+                "1/0",  # Runtime error
+                EOFError(),  # Exit
             ],
         ):
             with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
                 # Run REPL
                 repl.run()
-                
+
                 # Verify expected outputs
                 output = fake_stdout.getvalue()
-                
+
                 # Check for variable name in output (from %vars command)
                 assert "x" in output
                 # Look for error messages
                 assert "syntax" in output.lower()
                 assert "division by zero" in output.lower() or "ZeroDivisionError" in output
-                
+
                 # Verify variable was set
                 assert repl.context.get("x") == 10
 

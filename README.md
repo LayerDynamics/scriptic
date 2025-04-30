@@ -1,4 +1,5 @@
 # Scriptic
+[![Upload Python Package](https://github.com/LayerDynamics/scriptic/actions/workflows/python-publish.yml/badge.svg)](https://github.com/LayerDynamics/scriptic/actions/workflows/python-publish.yml)
 
 A minimalist, embeddable Python REPL with zero external dependencies.
 
@@ -19,7 +20,7 @@ Simply copy `scriptic.py` into your project:
 
 ```bash
 # From GitHub
-curl -O https://raw.githubusercontent.com/yourusername/scriptic/main/scriptic.py
+curl -O https://raw.githubusercontent.com/LayerDynamics/scriptic/main/scriptic.py
 
 # Or just copy the file directly to your project
 ```
