@@ -41,8 +41,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: User Interfaces",
-    "Topic ::  REPL / Script Runner",
-    "Environment :: Console",
 ]
 
 [project.urls]
