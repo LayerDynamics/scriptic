@@ -41,8 +41,12 @@ jobs:
           python -m build
           ls -la dist/
 
-      # Publish package distributions to PyPI
-      - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        # No need for environment variables like TWINE_PASSWORD
-        # The action uses OIDC (id-token: write permission) and the specified environment
+      # Upload to PyPI directly using twine instead of the PyPI action
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          source venv/bin/activate
+          pip install twine
+          twine upload dist/*
